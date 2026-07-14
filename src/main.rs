@@ -155,26 +155,28 @@ fn print_help() {
                 Row::new("", "--nanos",   "integer nanoseconds (e.g., 70982441221)"),
             ],
         ))
-        .footer(
-"EXAMPLES
-  timeit fasthex file.bin
-  timeit -r 10 --median fasthex file.bin
-  timeit -w 3 -r 10 --timeout 30s fasthex file.bin
-  timeit -q -r 100 fasthex file.bin
-  timeit --profile=bench fasthex file.bin
-  timeit --compare \"hexdump file.bin\" \"fasthex file.bin\"
-  timeit --timeout 5m long-running-cmd
-
-TIMEOUT UNITS
-  ns, μs/us, ms, s, m, h (e.g., 100ms, 30s, 5m, 1h)
-
-PROFILES
-  Create profile files in ~/.local/bin/timeit.d/ with format:
-
-  runs=100
-  warmup=5
-  quiet=true"
-        );
+        .section(Section::new(
+            "EXAMPLES",
+            vec![
+                Row::new("", "timeit fasthex file.bin", ""),
+                Row::new("", "timeit -r 10 --median fasthex file.bin", ""),
+                Row::new("", "timeit -w 3 -r 10 --timeout 30s fasthex file.bin", ""),
+                Row::new("", "timeit -q -r 100 fasthex file.bin", ""),
+                Row::new("", "timeit --profile=bench fasthex file.bin", ""),
+                Row::new("", "timeit --compare \"hexdump file.bin\" \"fasthex file.bin\"", ""),
+                Row::new("", "timeit --timeout 5m long-running-cmd", ""),
+            ],
+        ))
+        .section(Section::with_note(
+            "TIMEOUT UNITS",
+            "ns, μs/us, ms, s, m, h (e.g., 100ms, 30s, 5m, 1h)",
+            vec![],
+        ))
+        .section(Section::with_note(
+            "PROFILES",
+            "Create profile files in ~/.local/bin/timeit.d/ with format:\n\n  runs=100\n  warmup=5\n  quiet=true",
+            vec![],
+        ));
     page.print(ColorWhen::Auto);
 }
 
