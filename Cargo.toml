@@ -1,6 +1,9 @@
 [package]
-name = "timeit"
+name = "timeit-cli"
 version = "0.1.0"
+description = "a precise command timing utility"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/CallMeAlphabet/timeit"
 edition = "2021"
 
 [dependencies]
@@ -12,3 +15,7 @@ lto             = "fat"
 codegen-units   = 1
 panic           = "abort"
 strip           = "symbols"
+
+[[bin]]
+name = "timeit"
+path = "src/main.rs"
