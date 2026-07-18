@@ -1,18 +1,29 @@
-# timeit — I wanted something better than fish's 'time'
+# timeit
 
 A simple, precise command timing utility written in Rust. 
 Because I like showing off how fast my hex dumping tool, [`fasthex`](https://github.com/CallMeAlphabet/fasthex/), and others are.
 
-## Install
+## Table of Contents
 
+- [Quick Start](#quick-start)
+- [Uninstall](#Uninstall)
+- [Help Message](#help-message)
+
+## Quick Start
+
+- **On Arch**
 ```bash
-cargo install --git https://github.com/CallMeAlphabet/timeit
+paru -S timeit 
+# or timeit-bin for a prebuilt release
 ```
-
+- **Non-arch**
+```bash
+cargo install timeit-cli
+```
 ## Uninstall
 
 ```bash
-cargo uninstall timeit
+cargo uninstall timeit-cli
 ```
 
 ## Help Message
