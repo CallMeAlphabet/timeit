@@ -23,7 +23,7 @@ cargo install timeit-cli
 ## Uninstall
 
 ```bash
-cargo uninstall timeit
+cargo uninstall timeit-cli
 ```
 
 ## Help Message
