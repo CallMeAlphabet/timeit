@@ -32,6 +32,29 @@ struct TimingResult {
     max: Duration,
 }
 
+enum RunError {
+    /// The benchmarked command exited with a non-zero status. Its own
+    /// stderr output has already been shown to the user, so timeit should
+    /// not add any extra noise — just propagate the exit code.
+    ExitStatus(i32),
+    /// A timeit-level failure (spawn error, timeout, ...) that needs its
+    /// own message because the command itself couldn't report anything.
+    Msg(String),
+}
+
+fn exit_on_run_error(e: RunError) -> ! {
+    match e {
+        RunError::ExitStatus(code) => {
+            // The command already printed its own error message.
+            std::process::exit(if code > 0 { code } else { 1 });
+        }
+        RunError::Msg(m) => {
+            eprintln!("timeit: {}", m);
+            std::process::exit(1);
+        }
+    }
+}
+
 fn format_duration_auto(d: Duration) -> String {
     let total_ns = d.as_nanos();
     let hours   = total_ns / 3_600_000_000_000;
@@ -349,9 +372,9 @@ fn calculate_timing_stats(times: Vec<Duration>) -> TimingResult {
     }
 }
 
-fn run_command_with_timeout(cmd_args: &[String], timeout: Option<Duration>, quiet: bool) -> Result<Duration, String> {
+fn run_command_with_timeout(cmd_args: &[String], timeout: Option<Duration>, quiet: bool) -> Result<Duration, RunError> {
     if cmd_args.is_empty() {
-        return Err("Empty command".to_string());
+        return Err(RunError::Msg("Empty command".to_string()));
     }
     
     let start = std::time::Instant::now();
@@ -371,7 +394,8 @@ fn run_command_with_timeout(cmd_args: &[String], timeout: Option<Duration>, quie
         command.stdout(std::process::Stdio::null());
     }
     
-    let child = command.spawn().map_err(|e| format!("Failed to start command: {}", e))?;
+    let child = command.spawn()
+        .map_err(|e| RunError::Msg(format!("Failed to start command: {}", e)))?;
     
     let result = if let Some(timeout_duration) = timeout {
         // Spawn a thread to wait for the process
@@ -385,26 +409,30 @@ fn run_command_with_timeout(cmd_args: &[String], timeout: Option<Duration>, quie
         
         // Wait for either completion or timeout
         match rx.recv_timeout(timeout_duration) {
-            Ok(wait_result) => wait_result.map_err(|e| format!("Command execution failed: {}", e))?,
+            Ok(wait_result) => wait_result
+                .map_err(|e| RunError::Msg(format!("Command execution failed: {}", e)))?,
             Err(_) => {
-                return Err(format!("Command timed out after {}", format_duration_auto(timeout_duration)));
+                return Err(RunError::Msg(format!("Command timed out after {}", format_duration_auto(timeout_duration))));
             }
         }
     } else {
         let mut child = child;
-        child.wait().map_err(|e| format!("Command execution failed: {}", e))?
+        child.wait()
+            .map_err(|e| RunError::Msg(format!("Command execution failed: {}", e)))?
     };
     
     let elapsed = start.elapsed();
     
     if !result.success() {
-        return Err(format!("Command failed with exit code: {}", result.code().unwrap_or(-1)));
+        // The command already wrote its own error to stderr;
+        // don't add any extra noise, just carry the exit code.
+        return Err(RunError::ExitStatus(result.code().unwrap_or(1)));
     }
     
     Ok(elapsed)
 }
 
-fn time_command(config: &Config, cmd_args: &[String], cmd_name: &str) -> Result<TimingResult, String> {
+fn time_command(config: &Config, cmd_args: &[String], cmd_name: &str) -> Result<TimingResult, RunError> {
     if !config.quiet {
         eprintln!();
         if !cmd_name.is_empty() {
@@ -445,6 +473,50 @@ fn time_command(config: &Config, cmd_args: &[String], cmd_name: &str) -> Result<
     Ok(calculate_timing_stats(times))
 }
 
+/// Comparison mode: instead of running command A `runs` times and then
+/// command B `runs` times, the two commands are interleaved
+/// (A, B, A, B, ...) so both see the same system conditions over time.
+fn time_compare(config: &Config, cmd1: &[String], cmd2: &[String]) -> Result<(TimingResult, TimingResult), RunError> {
+    // Warmup phase: warm both commands, interleaved as well
+    if config.warmup > 0 && !config.quiet {
+        eprintln!();
+        eprintln!("Warming up... ({} runs each)", config.warmup);
+    }
+    
+    for _ in 0..config.warmup {
+        run_command_with_timeout(cmd1, config.timeout, true)?; // Always quiet for warmup
+        run_command_with_timeout(cmd2, config.timeout, true)?;
+    }
+    
+    // Wait 5 seconds after warmup
+    if config.warmup > 0 {
+        if !config.quiet {
+            eprintln!("Cooldown (5s)...");
+        }
+        thread::sleep(Duration::from_secs(5));
+    }
+    
+    // Measured runs, alternating A and B each iteration
+    let mut times1 = Vec::new();
+    let mut times2 = Vec::new();
+    
+    for i in 1..=config.runs {
+        let elapsed1 = run_command_with_timeout(cmd1, config.timeout, config.quiet)?;
+        if !config.quiet {
+            eprintln!("Run {}/{} [A]: {}", i, config.runs, format_duration(elapsed1, config.display));
+        }
+        times1.push(elapsed1);
+        
+        let elapsed2 = run_command_with_timeout(cmd2, config.timeout, config.quiet)?;
+        if !config.quiet {
+            eprintln!("Run {}/{} [B]: {}", i, config.runs, format_duration(elapsed2, config.display));
+        }
+        times2.push(elapsed2);
+    }
+    
+    Ok((calculate_timing_stats(times1), calculate_timing_stats(times2)))
+}
+
 
 
 fn main() {
@@ -458,24 +530,17 @@ fn main() {
     };
     
     if let Some((cmd1_str, cmd2_str)) = &config.compare_commands {
-        // Comparison mode
+        // Comparison mode: runs are interleaved (A, B, A, B, ...)
         eprintln!();
         eprintln!("=== COMMAND COMPARISON ===");
+        if !config.quiet {
+            eprintln!("Command A: {}", cmd1_str);
+            eprintln!("Command B: {}", cmd2_str);
+        }
         
-        let result1 = match time_command(&config, &[cmd1_str.clone()], &format!("Command A: {}", cmd1_str)) {
+        let (result1, result2) = match time_compare(&config, &[cmd1_str.clone()], &[cmd2_str.clone()]) {
             Ok(r) => r,
-            Err(e) => {
-                eprintln!("Command A failed: {}", e);
-                std::process::exit(1);
-            }
-        };
-        
-        let result2 = match time_command(&config, &[cmd2_str.clone()], &format!("Command B: {}", cmd2_str)) {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("Command B failed: {}", e);
-                std::process::exit(1);
-            }
+            Err(e) => exit_on_run_error(e),
         };
         
         eprintln!();
@@ -511,10 +576,7 @@ fn main() {
         
         let result = match time_command(&config, &config.command, "") {
             Ok(r) => r,
-            Err(e) => {
-                eprintln!("Command failed: {}", e);
-                std::process::exit(1);
-            }
+            Err(e) => exit_on_run_error(e),
         };
         
         let final_stat = if config.median { result.median } else { result.avg };
@@ -527,11 +589,4 @@ fn main() {
             eprintln!("{} ({}): {}", stat_name, config.runs, format_duration(final_stat, config.display));
         }
     }
-}
-
-
-
-
-
-
-
+    }
