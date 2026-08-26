@@ -163,6 +163,7 @@ fn print_help() {
                 Row::with_value("-r", "--runs",    "<N>",        "number of measured runs (default: 1)"),
                 Row::with_value("-p", "--profile", "<NAME>",     "load profile from ~/.local/bin/timeit.d/NAME.profile"),
                 Row::new("-h", "--help",    "show this help"),
+                Row::new("-V", "--version", "show version"),
                 Row::new("",   "--median",  "show median instead of average"),
                 Row::with_value("", "--timeout", "<DURATION>",  "kill commands after timeout (e.g., 30s, 5m, 100ms)"),
                 Row::new("",   "--compare", "compare two commands (requires two quoted commands)"),
@@ -224,6 +225,9 @@ fn parse_args() -> Result<Config, String> {
         
         if arg == "-h" || arg == "--help" {
             print_help();
+            std::process::exit(0);
+        } else if arg == "-V" || arg == "--version" {
+            println!("timeit {}", env!("CARGO_PKG_VERSION"));
             std::process::exit(0);
         } else if arg == "-q" || arg == "--quiet" {
             quiet = true;
