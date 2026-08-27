@@ -227,7 +227,7 @@ fn parse_args() -> Result<Config, String> {
             print_help();
             std::process::exit(0);
         } else if arg == "-V" || arg == "--version" {
-            println!("timeit {}", env!("CARGO_PKG_VERSION"));
+            println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
             std::process::exit(0);
         } else if arg == "-q" || arg == "--quiet" {
             quiet = true;
